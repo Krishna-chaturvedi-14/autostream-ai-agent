@@ -2,7 +2,8 @@ import os
 from typing import TypedDict, List, Dict, Optional, Any
 from dotenv import load_dotenv
 
-import groq
+from google import genai
+from google.genai import types
 from langgraph.graph import StateGraph, END
 
 from rag import retrieve_context
@@ -11,9 +12,9 @@ from tools import mock_lead_capture
 # Load environment variables
 load_dotenv()
 
-# Initialize Groq client
-groq_client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY"))
-MODEL_NAME = "llama-3.3-70b-versatile"
+# Initialize Gemini client
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+MODEL_NAME = "gemini-2.5-flash"
 
 class AgentState(TypedDict):
     """State across the agent workflow."""
@@ -36,22 +37,32 @@ def classify_intent(state: AgentState) -> AgentState:
         
     latest_msg = messages[-1]["content"]
     
-    system_prompt = """You are an intent classifier. Categorize the user's message into exactly ONE of these categories:
-- greeting
-- product_inquiry
-- high_intent
-Respond with ONLY the category label and nothing else."""
+    system_prompt = """You are an intent classifier. Classify the user's message into EXACTLY one of these three labels (greeting, product_inquiry, high_intent).
 
-    response = groq_client.chat.completions.create(
+EXAMPLES:
+User: "hello" -> Label: greeting
+User: "what are your prices?" -> Label: product_inquiry
+User: "sounds good. i want to try the pro plan for my youtube channel" -> Label: high_intent
+User: "how do refunds work?" -> Label: product_inquiry
+User: "cool what next" -> Label: high_intent
+User: "let's sign up" -> Label: high_intent
+
+Reply with ONLY the label. No explanation. No punctuation. Just one word."""
+
+    response = client.models.generate_content(
         model=MODEL_NAME,
-        max_tokens=10,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": latest_msg}
-        ]
+        contents=latest_msg,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=10
+        )
     )
     
-    intent = response.choices[0].message.content.strip().lower()
+    intent_text = response.text
+    if intent_text is None:
+        intent = "product_inquiry"
+    else:
+        intent = intent_text.strip().lower()
     
     valid_intents = ["greeting", "product_inquiry", "high_intent"]
     if intent not in valid_intents:
@@ -81,16 +92,21 @@ Answer only based on this knowledge:
 
 If the knowledge doesn't contain the answer, say you don't know but offer to check with the team."""
     
-    groq_messages = [{"role": "system", "content": system_prompt}]
-    groq_messages.extend(messages)
-    
-    response = groq_client.chat.completions.create(
+    gemini_messages = []
+    for msg in messages:
+        role = "user" if msg["role"] == "user" else "model"
+        gemini_messages.append({"role": role, "parts": [{"text": msg["content"]}]})
+        
+    response = client.models.generate_content(
         model=MODEL_NAME,
-        max_tokens=300,
-        messages=groq_messages
+        contents=gemini_messages,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=300
+        )
     )
     
-    response_msg = response.choices[0].message.content
+    response_msg = response.text if response.text is not None else "I apologize, but I encountered an error processing your request. Could you rephrase?"
     messages.append({"role": "assistant", "content": response_msg})
     
     return {"messages": messages}
