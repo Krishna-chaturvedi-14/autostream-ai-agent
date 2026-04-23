@@ -8,6 +8,9 @@ A complete LangGraph-powered conversational AI agent for the fictional SaaS comp
 3. Copy `.env.example` to `.env` and add your Anthropic API key
 4. run `python3 agent.py`
 
+### Demo Video
+[Watch the demo on Google Drive](https://drive.google.com/file/d/18MYCtIBgJns8zCccLlMLhcglj5voRvrO/view?usp=sharing)
+
 ### Architecture Explanation
 This project utilizes **LangGraph** as a structured state machine, allowing explicit node transitions and maintaining a multi-turn memory without losing track of user context. LangGraph was chosen because the state machine approach ensures that conversational flows—like gathering lead details or routing to a general knowledge responder—are deliberate and verifiable, avoiding the "black box" nature of standard conversational chains.
 
